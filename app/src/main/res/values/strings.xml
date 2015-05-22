@@ -13,7 +13,7 @@
     <string name="link_to_register">Not a Member? Sign Up Now!</string>
     <string name="create_account">Create Account</string>
     <string name="register_account">Register Account</string>
-    <string name="min_5_characters">min 5 characters</string>
+    <string name="min_6_characters">min 6 characters</string>
     <string name="example">example@example.com</string>
     <string name="university">University</string>
     <string name="done">Done</string>
