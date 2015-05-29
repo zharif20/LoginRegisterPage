@@ -51,10 +51,10 @@ public class HomeScreen extends Activity {
      * preferences Clears the user data from sqlite users table
      * */
     private void logoutUser() {
-        databaseHandler.deleteUser();
+//        databaseHandler.deleteUser();
 
         // Launching the login activity
-        Intent intent = new Intent(HomeScreen.this, Login.class);
+        Intent intent = new Intent(HomeScreen.this, LoginPage.class);
         startActivity(intent);
         finish();
     }

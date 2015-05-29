@@ -2,8 +2,11 @@ package com.socbox.zharif.loginregisterpage;
 
 import android.app.Dialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v7.app.ActionBarActivity;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -11,6 +14,16 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.NumberPicker;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import org.apache.http.NameValuePair;
+import org.apache.http.message.BasicNameValuePair;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  *
@@ -33,6 +46,18 @@ public class RegisterPG extends ActionBarActivity {
 
     public String whichUniversity;
 
+    private static final String url_create_account = "http://46.101.25.6/database_connection_code/db_login_create_account.php";
+
+    //These are the tags (or names) of the variables to be retrieved from the JSON array the server will return
+    private static final String TAG_SUCCEEDED = "succeeded";
+    private static final String TAG_USERDATA = "user_data";
+    private static final String TAG_USERNAME = "username";
+    private static final String TAG_PASSWORD = "password";
+    private static final String TAG_DEBUGMESSAGE = "debugMessage";
+
+    // JSON parser class
+    JSONParserForDatabase jsonParser = new JSONParserForDatabase();
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
@@ -40,7 +65,7 @@ public class RegisterPG extends ActionBarActivity {
         setContentView(R.layout.activity_register);
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 
-        openDB();
+//        openDB();
         setUpLayoutItems();
         listUniversity();
         addRegisterUser();
@@ -49,10 +74,10 @@ public class RegisterPG extends ActionBarActivity {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    public void openDB(){
-        databaseHandler = new DatabaseHandler(this);
-        databaseHandler = databaseHandler.open();
-    }
+//    public void openDB(){
+//        databaseHandler = new DatabaseHandler(this);
+//        databaseHandler = databaseHandler.open();
+//    }
 
     private void setUpLayoutItems() {
 
@@ -77,43 +102,49 @@ public class RegisterPG extends ActionBarActivity {
                 String password = inputPassword.getText().toString();
 //                int university = inputUniversity.getValue();
 
-                if (!email.isEmpty()) {
+                if (email.trim().length() > 0 && password.trim().length() > 0) {
 
-                    if (!password.isEmpty()) {
-                        /**
-                         * Reference email validation
-                         * http://www.mirc.org/mishbox/reference/re.email.htm
-                         * Format email example:
-                         * example@example.com - matches
-                         * example.example@com - non-matches
-                         */
-                        if (inputEmail.length() > 0 && inputEmail.getText().toString().matches("^([a-zA-Z0-9_\\-\\.]+)" +
-                                "@([a-zA-Z0-9_\\-\\.]+)\\.([a-zA-Z]{2,5})$")) {
+                    if (!email.isEmpty()) {
 
-                            if (inputPassword.length() > 5) {
+                        if (!password.isEmpty()) {
+                            /**
+                             * Reference email validation
+                             * http://www.mirc.org/mishbox/reference/re.email.htm
+                             * Format email example:
+                             * example@example.com - matches
+                             * example.example@com - non-matches
+                             */
+                            if (inputEmail.length() > 0 && inputEmail.getText().toString().matches("^([a-zA-Z0-9_\\-\\.]+)" +
+                                    "@([a-zA-Z0-9_\\-\\.]+)\\.([a-zA-Z]{2,5})$")) {
 
-//                                    if (registerAccount.inputEmail.getText().toString().matches("^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+.[a-zA-Z0-9-.]+$")) {
+                                if (inputPassword.length() > 5) {
 
-//                                Log.i(TAG, "Guardian Galaxy");
-//                                registerUser(email, password);
-                                addValidAccount();
-                                databaseHandler.addUser(email, password);
-//                                Toast.makeText(getApplicationContext(), "Eureka!", Toast.LENGTH_SHORT).show();
+                                    //if (registerAccount.inputEmail.getText().toString().matches("^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+.[a-zA-Z0-9-.]+$")) {
 
-//                                    } else {
-//                                        registerAccount.inputEmail.setError("Invalid Email");
-//                                    }
+    //                                Log.i(TAG, "Guardian Galaxy");
+                                    //registerUser(email, password);
+                                    addValidAccount();
+                                    new Login().execute();
+    //                                databaseHandler.addUser(email, password);
+    //                                Toast.makeText(getApplicationContext(), "Eureka!", Toast.LENGTH_SHORT).show();
+
+    //                                    } else {
+    //                                        registerAccount.inputEmail.setError("Invalid Email");
+    //                                    }
+                                } else {
+                                    inputPassword.setError("Password should be minimum 6 characters");
+                                }
                             } else {
-                                inputPassword.setError("Password should be minimum 6 characters");
+                                inputEmail.setError("Invalid Email");
                             }
                         } else {
-                            inputEmail.setError("Invalid Email");
+                            inputPassword.setError("Request Password!");
                         }
                     } else {
-                        inputPassword.setError("Request Password!");
+                        inputEmail.setError("Request Email!");
                     }
                 } else {
-                    inputEmail.setError("Request Email!");
+                    Toast.makeText(getApplicationContext(), "Please Enter Details!", Toast.LENGTH_LONG).show();
                 }
 
             }
@@ -372,26 +403,148 @@ public class RegisterPG extends ActionBarActivity {
         dialog.show();
     }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_login, menu);
-        return true;
+    /**
+     * Background Async Task to access the Lgin database. This needs to be done in a background thread
+     * or else the APP will crash. One thing to note is you cannot set UI elements (such as seeting the text for a textfield)
+     * from a background thread or it will crash. You will need to create a function to run those commands on the main thread.
+     * I have created an example function to update a textfield in the UI with the current status of the connection attempt. See
+     * the bottom of the file for this. Note also that you can pass variables to an Asynctask as parameters, this example passes
+     * a string to tell it whether it is creating an account or logging in
+     * */
+    class Login extends AsyncTask<String, String, String> {
+
+        /**
+         * Before starting the background thread update the status of the connection attempt
+         */
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+        }
+
+        /**
+         * Accessing the login DB in background thread
+         */
+        protected String doInBackground(String... params) {
+
+            int succeeded;
+
+            try {
+                // Building Parameters
+                String debugMessage;
+                JSONObject json;
+                //Get the username and passwords from the textfields (remember, we can get these but cannot set them from this thread)
+                String email = inputEmail.getText().toString();
+                String password = inputPassword.getText().toString();
+
+                //Create two name value pairs to send to the server, one for the username, one for the password
+                List<NameValuePair> dataToSend = new ArrayList<NameValuePair>();
+                dataToSend.add(new BasicNameValuePair("username", email));
+                dataToSend.add(new BasicNameValuePair("password", password));
+
+                // Send the new username and password to the database by making HTTP POST request
+                // A POST request is used as we are writing to the database
+                //This is the function you call to access the database, the parameters are:
+                //(url of php file to access, "POST" or "GET", the data to send to the server)
+                json = jsonParser.makeHttpRequest(url_create_account, "POST", dataToSend);
+                //Send the retrieved JSON array to logcat
+                Log.d("User login status", json.toString());
+
+                //The returned json object should be an array in the form [Succeeded: (value), debugMessage (message) Login details: [username: (username string), password: (password string)]]
+
+                //Check the variable "succeded" to see if the attempt was successful
+                succeeded = json.getInt(TAG_SUCCEEDED);
+                //If it was
+                if (succeeded == 1) {
+
+                    //Get the message about the login/account creation status
+                    //In this case, it will be "Login successful" or "Account succesfully created"
+                    debugMessage = json.getString(TAG_DEBUGMESSAGE);
+                    //Get the userdata (Username and password) from the response
+                    JSONArray userDataArray = json.getJSONArray(TAG_USERDATA);
+
+                    //Get the user login details from JSON Array
+                    JSONObject userData = userDataArray.getJSONObject(0);
+
+                    //The best way to store data in the App without having to constantly pass it between activities is
+                    //using shared preferences. These allow for variables to be stored until the App is closed.
+                    //In this case, we will be using one to staore the username and password
+                    SharedPreferences userLoginDetails = getSharedPreferences("userlogindetails", 0);
+                    SharedPreferences.Editor editor = userLoginDetails.edit();
+                    //Add the username
+                    editor.putString("username", userData.getString(TAG_USERNAME));
+                    //Add the password
+                    editor.putString("password", userData.getString(TAG_PASSWORD));
+                    //Commit the changes
+                    editor.commit();
+
+
+                    new Thread() {
+                        //Create a new runnable for the UI thread
+                        @Override
+                        public void run() {
+                            try {
+                                runOnUiThread(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        //Update the text field with the status message
+                                        addValidAccount();
+                                    }
+                                });
+                            } catch (final Exception ex) {
+                                //If an error occured, print this out
+                                Log.i("Error:","Exception when updating status message in UI thread");
+                            }
+                        }
+                        //Start the thread
+                    }.start();
+
+                    //Create an activity to show the user is logged in (this is just an example I use to
+                    //demonstrate that the user has logged in succesfully)
+                    //Intent intent = new Intent(RegisterPG.this, HomeScreen.class);
+                    //Start the activity
+                    //startActivity(intent);
+
+                    //If the login/account creation attempt failed
+                } else {
+                    //Print this out to inform the user that their attempt failed
+                    //debugMessage= json.getString(TAG_DEBUGMESSAGE);
+                    //Update the UI
+                    //updateStatusMessage(debugMessage);
+                }
+                //Exception handling
+            } catch (JSONException e) {
+                //e.printStackTrace();
+                //Update the UI with a desription of the error
+                //updateStatusMessage("Error: connection problems");
+            }
+
+            //Asynctask has to return something, let it return null
+            return null;
+
+        }
     }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
+        @Override
+        public boolean onCreateOptionsMenu(Menu menu) {
+            // Inflate the menu; this adds items to the action bar if it is present.
+            getMenuInflater().inflate(R.menu.menu_login, menu);
             return true;
         }
+
+        @Override
+        public boolean onOptionsItemSelected(MenuItem item) {
+            // Handle action bar item clicks here. The action bar will
+            // automatically handle clicks on the Home/Up button, so long
+            // as you specify a parent activity in AndroidManifest.xml.
+            int id = item.getItemId();
+
+            //noinspection SimplifiableIfStatement
+            if (id == R.id.action_settings) {
+                return true;
+            }
 
 //        switch (item.getItemId()) {
 //            case R.id.action_search:
@@ -402,7 +555,7 @@ public class RegisterPG extends ActionBarActivity {
 //                return true;
 //            default:
 
-        return super.onOptionsItemSelected(item);
-    }
+            return super.onOptionsItemSelected(item);
+        }
 
 }
